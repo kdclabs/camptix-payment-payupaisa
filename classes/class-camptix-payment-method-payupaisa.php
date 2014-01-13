@@ -27,8 +27,8 @@ class CampTix_Payment_Method_PayuPaisa extends CampTix_Payment_Method {
 
 	function camptix_init() {
 		$this->options = array_merge( array(
-			'merchant_id' => '',
 			'merchant_key' => '',
+			'merchant_salt' => '',
 			'sandbox' => true
 		), $this->get_payment_options() );
 
@@ -37,8 +37,8 @@ class CampTix_Payment_Method_PayuPaisa extends CampTix_Payment_Method {
 	}
 
 	function payment_settings_fields() {
-		$this->add_settings_field_helper( 'merchant_id', 'Merchant ID', array( $this, 'field_text' ) );
-		$this->add_settings_field_helper( 'merchant_key', 'Merchant Key', array( $this, 'field_text' ) );
+		$this->add_settings_field_helper( 'merchant_key', 'Merchant KEY', array( $this, 'field_text' ) );
+		$this->add_settings_field_helper( 'merchant_salt', 'Merchant SALT', array( $this, 'field_text' ) );
 		$this->add_settings_field_helper( 'sandbox', __( 'Sandbox Mode', 'camptix' ), array( $this, 'field_yesno' ),
 			__( "The Test Mode is a way to test payments. Any amount debited from your account will be re-credited within Five (5) working days.", 'camptix' )
 		);
@@ -47,10 +47,10 @@ class CampTix_Payment_Method_PayuPaisa extends CampTix_Payment_Method {
 	function validate_options( $input ) {
 		$output = $this->options;
 
-		if ( isset( $input['merchant_id'] ) )
-			$output['merchant_id'] = $input['merchant_id'];
 		if ( isset( $input['merchant_key'] ) )
 			$output['merchant_key'] = $input['merchant_key'];
+		if ( isset( $input['merchant_salt'] ) )
+			$output['merchant_salt'] = $input['merchant_salt'];
 
 		if ( isset( $input['sandbox'] ) )
 			$output['sandbox'] = (bool) $input['sandbox'];
@@ -229,30 +229,45 @@ class CampTix_Payment_Method_PayuPaisa extends CampTix_Payment_Method {
 			'tix_payment_token' => $payment_token,
 			'tix_payment_method' => 'payupaisa',
 		), $this->get_tickets_url() );
-
+		
 		$order = $this->get_order( $payment_token );
+		
+		
+		$merchant_key = $this->options['merchant_key'];
+		$merchant_salt = $this->options['merchant_salt'];
+		$productinfo = 'Ticket for Order: '.$payment_token;
+		$order_amount = $order['total'];
+		$order_id = $payment_token;
+
+		$str = "$merchant_key|$payment_token|$order_amount|$productinfo|FirstName|email@domain.ext|$payment_token||||||||||$merchant_salt";
+		$hash = strtolower(hash('sha512', $str));
 
 		$payload = array(
-			// Merchant details
-			'merchant_id' => $this->options['merchant_id'],
-			'merchant_key' => $this->options['merchant_key'],
-			'return_url' => $return_url,
-			'cancel_url' => $cancel_url,
-			'notify_url' => $notify_url,
-
-			// Item details
-			'm_payment_id' => $payment_token,
-			'amount' => $order['total'],
-			'item_name' => get_bloginfo( 'name' ) .' purchase, Order ' . $payment_token,
-			'item_description' => sprintf( __( 'New order from %s', 'woothemes' ), get_bloginfo( 'name' ) ),
-
-			// Custom strings
-			'custom_str1' => $payment_token,
-			'source' => 'WordCamp-CampTix-Plugin'
+			'key' 			=> $this->options['merchant_key'],
+			'hash' 			=> $hash,
+			'txnid' 		=> $payment_token,
+			'amount' 		=> $order_amount,
+			'firstname'		=> 'FirstName',
+			'email' 		=> 'email@domain.ext',
+			'phone' 		=> '1234567890',
+			'productinfo'	=> $productinfo,
+			'surl' 			=> $return_url,
+			'furl' 			=> $notify_url,
+			'lastname' 		=> 'LastName',
+			'address1' 		=> 'Address1',
+			'address2' 		=> 'Address2',
+			'city' 			=> 'city',
+			'state' 		=> 'state',
+			'country' 		=> 'country',
+			'zipcode' 		=> 'postcode',
+			'curl'			=> $cancel_url,
+			'pg' 			=> 'NB',
+			'udf1' 			=> $payment_token,
+			'service_provider'	=> 'payu_paisa' // must be "payu_paisa"
 		);
 		if ( $this->options['sandbox'] ) {
-			$payload['merchant_id'] = '10000100';
-			$payload['merchant_key'] = '46f0cd694581a';
+			$payload['merchant_key'] = 'JBZaLc';
+			$payload['merchant_salt'] = 'GQs7yium';
 		}
 
 		$payupaisa_args_array = array();

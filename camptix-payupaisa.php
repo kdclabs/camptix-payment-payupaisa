@@ -16,7 +16,7 @@ add_filter( 'camptix_currencies', 'camptix_add_inr_currency' );
 function camptix_add_inr_currency( $currencies ) {
 	$currencies['INR'] = array(
 		'label' => __( 'Indian Rupees', 'camptix' ),
-		'format' => 'Rs. (&#8377;) %s',
+		'format' => 'Rs. %s',
 	);
 	return $currencies;
 }
