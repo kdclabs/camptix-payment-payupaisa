@@ -1,9 +1,9 @@
 <?php
 
 /**
- * CampTix PayU Paisa Payment Method
+ * CampTix PayU Money Payment Method
  *
- * This class handles all PayU Paisa integration for CampTix
+ * This class handles all PayU Money integration for CampTix
  *
  * @since		1.0
  * @package		CampTix
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) exit; // Exit if accessed directly
 
 class CampTix_Payment_Method_PayuPaisa extends CampTix_Payment_Method {
 	public $id = 'payupaisa';
-	public $name = 'PayU Paisa';
+	public $name = 'PayU Money';
 	public $description = 'Redefining Payments, Simplifying Lives! Empowering any business to collect money online within minutes.';
 	public $supported_currencies = array( 'INR' );
 
@@ -119,41 +119,8 @@ class CampTix_Payment_Method_PayuPaisa extends CampTix_Payment_Method {
 		}
 	}
 
-	function validate_response_data( $data ) {
-		$url = $this->options['sandbox'] ? 'https://test.payu.in/_payment' : 'https://secure.payu.in/_payment';
-
-		$response = wp_remote_post( $url, array(
-			'method' => 'POST',
-			'body' => $data,
-			'timeout' => 70,
-			'sslverify' => true,
-			'user-agent' => 'WordCamp-CampTix-Plugin'
-		) );
-
-		if ( is_wp_error( $response ) ) {
-			$this->log( sprintf( 'There was a problem connecting to the payment gateway. Response data attached.' ), null, $response );
-			return false;
-		}
-
-		if ( empty( $response['body'] ) ) {
-			$this->log( sprintf( 'Empty PayU Paisa response. Response data attached.' ), null, $response );
-			return false;
-		}
-
-		parse_str( $response['body'], $parsed_response );
-
-		$response = $parsed_response;
-
-		// Interpret Response
-		if ( is_array( $response ) && in_array( 'VALID', array_keys( $response ) ) ) {
-			return true;
-		} else {
-			return false;
-		}
-	}
-
 	/**
-	 * Runs when PayU Paisa sends an ITN signal.
+	 * Runs when PayU Money sends an ITN signal.
 	 * Verify the payload and use $this->payment_result
 	 * to signal a transaction result back to CampTix.
 	 */
@@ -165,43 +132,47 @@ class CampTix_Payment_Method_PayuPaisa extends CampTix_Payment_Method {
 
 		$payment_token = ( isset( $_REQUEST['tix_payment_token'] ) ) ? trim( $_REQUEST['tix_payment_token'] ) : '';
 
-		$payload = stripslashes_deep( $_POST );
+		$payload = stripslashes_deep( $_REQUEST );
+
+		$merchant_key = $this->options['merchant_key'];
+		$merchant_salt = $this->options['merchant_salt'];
+		$hash = $_REQUEST['hash'];
+		$status = $_REQUEST['status'];
+		$checkhash = hash('sha512', "$merchant_salt|$_REQUEST[status]||||||||||$_REQUEST[udf1]|$_REQUEST[email]|$_REQUEST[firstname]|$_REQUEST[productinfo]|$_REQUEST[amount]|$_REQUEST[txnid]|$merchant_key");
 
 		$data_string = '';
 		$data_array = array();
 
 		// Dump the submitted variables and calculate security signature
 		foreach ( $payload as $key => $val ) {
-			if ( $key != 'signature' ) {
+			//if ( $key != 'signature' ) {
 				$data_string .= $key .'='. urlencode( $val ) .'&';
 				$data_array[$key] = $val;
-			}
+			//}
 		}
 		$data_string = substr( $data_string, 0, -1 );
 		$signature = md5( $data_string );
 
-		$pfError = false;
-		if ( 0 != strcmp( $signature, $payload['signature'] ) ) {
-			$pfError = true;
-			$this->log( sprintf( 'ITN request failed, signature mismatch: %s', $payload ) );
-		}
-
-		// Verify IPN came from PayU Paisa
-		if ( ! $pfError && $this->validate_response_data( $data_array ) ) {
-			switch ( $payload['payment_status'] ) {
-				case "COMPLETE" :
-					$this->payment_result( $payment_token, CampTix_Plugin::PAYMENT_STATUS_COMPLETED );
-					break;
-				case "FAILED" :
-					$this->payment_result( $payment_token, CampTix_Plugin::PAYMENT_STATUS_FAILED );
-					break;
-				case "PENDING" :
-					$this->payment_result( $payment_token, CampTix_Plugin::PAYMENT_STATUS_PENDING );
-					break;
+		if ( $hash == $checkhash ) {
+			if ( $payload['status'] != "" ) {
+				switch ( $payload['status'] ) {
+					case "success" :
+						$this->payment_result( $payment_token, CampTix_Plugin::PAYMENT_STATUS_COMPLETED );
+						break;
+					case "failed" :
+						$this->payment_result( $payment_token, CampTix_Plugin::PAYMENT_STATUS_FAILED );
+						break;
+					case "pending" :
+						$this->payment_result( $payment_token, CampTix_Plugin::PAYMENT_STATUS_PENDING );
+						break;
+				}
+			} else {
+				$this->payment_result( $payment_token, CampTix_Plugin::PAYMENT_STATUS_PENDING );
 			}
 		} else {
-			$this->payment_result( $payment_token, CampTix_Plugin::PAYMENT_STATUS_PENDING );
+			$this->log( sprintf( 'Request failed, hash mismatch: %s', $payload ) );
 		}
+
 	}
 
 	public function payment_checkout( $payment_token ) {
@@ -243,7 +214,7 @@ class CampTix_Payment_Method_PayuPaisa extends CampTix_Payment_Method {
 		$hash = strtolower(hash('sha512', $str));
 
 		$payload = array(
-			'key' 			=> $this->options['merchant_key'],
+			'key' 			=> $merchant_key,
 			'hash' 			=> $hash,
 			'txnid' 		=> $payment_token,
 			'amount' 		=> $order_amount,
